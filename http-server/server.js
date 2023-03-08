@@ -24,8 +24,8 @@ http.createServer({}, async (request, response) => {
 
 let loaded_files = {};
 async function loadFile(url) {
-	if (url in loaded_files) return loaded_files[url];
 	if (url.endsWith("/")) url += "index.html";
+	if (url in loaded_files) return loaded_files[url];
 	let filePath = path.join(ROOT_DIRECTORY, url);
 	if (!filePath.startsWith(ROOT_DIRECTORY)) return null;
 	try {
