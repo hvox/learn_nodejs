@@ -1,0 +1,74 @@
+#!/bin/env node
+const APP_NAME = "service-supervisor";
+
+const child_process = require("child_process");
+const fs = require("fs");
+const { promisify } = require('util');
+
+
+// TODO: add control after start
+var services = [];
+
+async function superviseServices(svdir) {
+	const svdirFiles = await fs.promises.readdir(svdir);
+	for (const service of svdirFiles) {
+		try {
+			await fs.promises.access(service + "/run");
+			services[service] = await startService(service);
+		} catch { };
+	}
+}
+
+async function startService(servicePath) {
+	const logs = fs.createWriteStream(servicePath + ".log", { flags: "a" });
+	// TODO: logs.close();
+	serviceProcess = child_process.spawn(servicePath + "/run");
+	serviceProcess.startTime = new Date();
+	logs.write(`:${dateToString()} Started\n`);
+	// TODO: filter lines, print only nonempty lines
+	let stdoutBuffer = "";
+	serviceProcess.stdout.on("data", (data) => {
+		let lines = (stdoutBuffer + data.toString()).split("\n")
+		stdoutBuffer = lines.pop();
+		for (const line of lines)
+			logs.write(` ${dateToString()} ${line}\n`);
+	});
+	let stderrBuffer = "";
+	serviceProcess.stderr.on("data", (data) => {
+		let lines = (stderrBuffer + data.toString()).split("\n")
+		stderrBuffer = lines.pop();
+		for (const line of lines)
+			logs.write(`!${dateToString()} ${line}\n`);
+	});
+	serviceProcess.on("close", async (errorCode) => {
+		const time = new Date() - serviceProcess.startTime;
+		if (errorCode != 0) {
+			logs.write(`:${dateToString()} Finished in ${time}ms with ERROR=${errorCode}\n`);
+		} else {
+			logs.write(`:${dateToString()} Finished in ${time}ms\n`);
+		}
+		logs.close();
+		setTimeout(async () => {
+			services[servicePath] = await startService(servicePath)
+		}, time > 1000 ? 0 : 1000);
+	});
+	return serviceProcess;
+}
+
+
+async function main(args) {
+	if (args.length != 1) {
+		console.error("Usage:\n\t" + APP_NAME + " <directory-with-services-to-run>");
+		process.exit(1);
+	}
+	await superviseServices(args[0]);
+}
+
+
+function dateToString(date = null) {
+	const iso = (date ?? new Date()).toISOString();
+	return iso.substring(0, 10) + " " + iso.substring(11, 23);
+}
+
+
+main(process.argv.slice(2));
